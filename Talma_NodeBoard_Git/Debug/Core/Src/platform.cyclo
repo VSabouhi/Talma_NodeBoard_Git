@@ -1,0 +1,8 @@
+../Core/Src/platform.c:18:6:VL53L4CD_SetI2CHandle	1
+../Core/Src/platform.c:24:9:VL53L4CD_RdDWord	1
+../Core/Src/platform.c:39:9:VL53L4CD_RdWord	1
+../Core/Src/platform.c:53:9:VL53L4CD_RdByte	1
+../Core/Src/platform.c:67:9:VL53L4CD_WrByte	1
+../Core/Src/platform.c:79:9:VL53L4CD_WrWord	1
+../Core/Src/platform.c:91:9:VL53L4CD_WrDWord	1
+../Core/Src/platform.c:106:9:WaitMs	1

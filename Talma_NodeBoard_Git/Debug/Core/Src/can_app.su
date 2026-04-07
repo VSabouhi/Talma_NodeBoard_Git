@@ -1,0 +1,4 @@
+../Core/Src/can_app.c:10:6:CAN_AppInit	8	static
+../Core/Src/can_app.c:20:13:CAN_FilterAcceptAll	48	static
+../Core/Src/can_app.c:44:6:CAN_AppStart	8	static
+../Core/Src/can_app.c:55:6:HAL_CAN_RxFifo0MsgPendingCallback	64	static,ignoring_inline_asm

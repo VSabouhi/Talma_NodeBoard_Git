@@ -1,0 +1,16 @@
+../Core/Src/v_VL53L4CD.c:86:13:I2C_Scan7bit	24	static
+../Core/Src/v_VL53L4CD.c:102:6:initialize_ptrTof_1_data	16	static
+../Core/Src/v_VL53L4CD.c:121:13:SetBusHandle	16	static
+../Core/Src/v_VL53L4CD.c:132:27:GetBusHi2c	16	static
+../Core/Src/v_VL53L4CD.c:144:13:RecoverBus	16	static
+../Core/Src/v_VL53L4CD.c:185:12:ResetAndReinitOne	24	static
+../Core/Src/v_VL53L4CD.c:219:13:InitBus_Generic	64	static
+../Core/Src/v_VL53L4CD.c:381:13:ReadBus_Generic	80	static
+../Core/Src/v_VL53L4CD.c:540:6:VL53L4CD_Init_Multi_I2C1	8	static
+../Core/Src/v_VL53L4CD.c:541:6:VL53L4CD_Init_Multi_I2C2	8	static
+../Core/Src/v_VL53L4CD.c:542:6:VL53L4CD_Init_Multi_I2C3	8	static
+../Core/Src/v_VL53L4CD.c:543:6:VL53L4CD_Init_Multi_I2C4	8	static
+../Core/Src/v_VL53L4CD.c:545:6:VL53L4CD_SensorRead_I2C1	16	static
+../Core/Src/v_VL53L4CD.c:550:6:VL53L4CD_SensorRead_I2C2	16	static
+../Core/Src/v_VL53L4CD.c:555:6:VL53L4CD_SensorRead_I2C3	16	static
+../Core/Src/v_VL53L4CD.c:560:6:VL53L4CD_SensorRead_I2C4	16	static

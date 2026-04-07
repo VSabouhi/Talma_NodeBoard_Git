@@ -1,0 +1,8 @@
+../Core/Inc/utils.h:9:23:clamp_u8	16	static
+../Core/Src/freertos.c:131:6:MX_FREERTOS_Init	16	static
+../Core/Src/freertos.c:212:6:StartDefaultTask	16	static
+../Core/Src/freertos.c:230:6:SensorTask	80	static
+../Core/Src/freertos.c:301:6:CmdTask	40	static
+../Core/Src/freertos.c:327:6:CanTxTask	16	static
+../Core/Src/freertos.c:340:6:DebugTask	16	static
+../Core/Src/freertos.c:350:7:print_can_frame	24	static
