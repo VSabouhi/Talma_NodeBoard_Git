@@ -1,4 +1,0 @@
-../Core/Src/can_app.c:10:6:CAN_AppInit	2
-../Core/Src/can_app.c:20:13:CAN_FilterAcceptAll	2
-../Core/Src/can_app.c:44:6:CAN_AppStart	3
-../Core/Src/can_app.c:55:6:HAL_CAN_RxFifo0MsgPendingCallback	8

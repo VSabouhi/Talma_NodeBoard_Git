@@ -1,2 +1,0 @@
-../Core/Src/motor_cmd.c:19:24:le_u32	16	static
-../Core/Src/motor_cmd.c:57:6:motor_cmd_dispatch	40	static
