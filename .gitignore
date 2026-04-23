@@ -1,0 +1,25 @@
+# Build outputs
+Debug/
+Release/
+
+# Object files
+*.o
+*.d
+*.su
+
+# Executables
+*.elf
+*.bin
+*.hex
+
+# Map & list
+*.map
+*.list
+
+# STM32CubeIDE / Eclipse
+.settings/
+.project
+.cproject
+
+# Logs
+*.log

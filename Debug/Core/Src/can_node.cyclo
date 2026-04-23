@@ -1,5 +1,0 @@
-../Core/Src/can_node.c:40:16:pack_sensor_status_2bit	4
-../Core/Src/can_node.c:65:26:CAN_SendChunk	2
-../Core/Src/can_node.c:107:13:SendAll4Chunks	3
-../Core/Src/can_node.c:145:6:CAN_NodeInit	1
-../Core/Src/can_node.c:158:6:CAN_NodeTxTask	2
