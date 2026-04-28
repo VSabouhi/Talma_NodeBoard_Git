@@ -341,7 +341,7 @@ void DebugTask(void *argument)
 {
     while(1)
     {
-        HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+       // HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }

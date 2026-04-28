@@ -47,6 +47,9 @@ static uint32_t g_nextRetryMs[SENSOR_COUNT] = {0};
 // Spike Removal
 
 static int32_t g_lastFiltered[SENSOR_COUNT] = {0};
+// مشخص می‌کند فیلتر هر سنسور حداقل یک نمونه معتبر گرفته یا نه
+// NOTE: برای جلوگیری از قفل شدن فیلتر روی مقدار اولیه صفر
+static uint8_t g_filterInitialized[SENSOR_COUNT] = {0};
 // ================== Your XSHUT mapping ==================
 GPIO_TypeDef* xshut_ports[SENSOR_COUNT] =
 { GPIOD, GPIOD, GPIOJ, GPIOG,
@@ -109,6 +112,13 @@ void initialize_ptrTof_1_data(void)
     g_errStreak[i]  = 0;
     g_lastGoodMs[i] = 0;
     g_nextRetryMs[i] = 0;
+
+
+    g_lastFiltered[i] = 0;
+
+    // NOTE:
+    // بعد از reset، اولین مقدار معتبر باید مستقیم وارد فیلتر شود
+    g_filterInitialized[i] = 0;
   }
 }
 /*----------------------------------------------------------*/
@@ -206,6 +216,11 @@ static int ResetAndReinitOne(bus_id_t bus, uint8_t i)
 
   st = VL53L4CD_StartRanging(dev[i]);
   if (st != 0) return -4;
+
+  // NOTE:
+  // بعد از reinit سنسور، فیلتر باید دوباره از اولین نمونه معتبر شروع کند
+  g_lastFiltered[i] = 0;
+  g_filterInitialized[i] = 0;
 
   return 0;
 }
@@ -433,7 +448,16 @@ static void ReadBus_Generic(
     {
     	g_errStreak[i]++;
 
-        printf("%s ERR: i=%u halerr=0x%lX\r\n",tag, i, (unsigned long)HAL_I2C_GetError(hi2c));   // 🔴 استفاده از hi2c
+    	// NOTE:
+    	// چاپ خطای I2C محدود شده تا UART و CPU درگیر نشوند.
+    	// فقط هر 10 خطای متوالی یک بار چاپ می‌کنیم.
+    	if ((g_errStreak[i] % 10U) == 0U)
+    	{
+    	    printf("%s ERR: i=%u halerr=0x%lX\r\n",
+    	           tag, i, (unsigned long)HAL_I2C_GetError(hi2c));
+    	}  // 🔴 استفاده از hi2c
+
+
       sens_status[i] = S_I2C_ERROR;
       ptrTof_1->data[i] = D_I2C_ERROR;
       continue;
@@ -463,20 +487,42 @@ static void ReadBus_Generic(
         else if (raw > 50) val = 50;
         else               val = raw;
 
-        // ---------- SPIKE REMOVAL ----------
-        int32_t prev = g_lastFiltered[i];
-
-        if (prev != 0 && ((val > prev ? val - prev : prev - val) > 20))
+        // ---------- FILTER INITIALIZATION ----------
+        // NOTE:
+        // اولین نمونه معتبر نباید low-pass شود.
+        // اگر از صفر شروع کنیم، مقدار 50 تبدیل به 12 می‌شود
+        // و بعد spike-removal آن را اشتباه قفل می‌کند.
+        if (!g_filterInitialized[i])
         {
-          // اگر پرش شدید بود → ignore کن
-          val = prev;
+            g_lastFiltered[i] = val;
+            ptrTof_1->data[i] = val;
+            g_filterInitialized[i] = 1;
         }
+        else
+        {
+            // ---------- SPIKE REMOVAL ----------
+            int32_t prev = g_lastFiltered[i];
 
-        // ---------- LOW PASS FILTER ----------
-        int32_t filtered = (prev * 3 + val) / 4;
+            // NOTE:
+            // اگر پرش خیلی شدید باشد، آن را spike فرض می‌کنیم
+            // و مقدار قبلی را نگه می‌داریم.
+            // NOTE:
+            // Spike removal فقط افت ناگهانی را محدود می‌کند.
+            // برگشت به فاصله بیشتر باید آزاد باشد، چون وقتی فشار برداشته می‌شود
+            // مقدار باید بتواند دوباره بالا برود.
+         /*   if ((prev - val) > 20)
+            {
+                val = prev;
+            }*/
 
-        g_lastFiltered[i] = filtered;
-        ptrTof_1->data[i] = filtered;
+            // ---------- LOW PASS FILTER ----------
+            // NOTE:
+            // فیلتر سبک برای نرم کردن تغییرات طبیعی سنسور
+            int32_t filtered = (prev * 3 + val) / 4;
+
+            g_lastFiltered[i] = filtered;
+            ptrTof_1->data[i] = filtered;
+        }
 
         sens_status[i] = S_OK;
         g_lastGoodMs[i] = now;

@@ -37,7 +37,8 @@
 #include "stepperMotor.h"
 #include "motor_cmd.h"
 #include <stdio.h>
-
+#include "sensor_baseline.h"
+#include "sensor_health.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -134,6 +135,11 @@ void MX_FREERTOS_Init(void) {
 	CAN_AppInit();
 	CAN_AppStart();
 	stepper_init();
+	// مقداردهی اولیه مانیتور سلامت سنسورها
+	// NOTE:
+	// این فقط history داخلی health را پاک می‌کند.
+	// baseline جداگانه بعد از init سنسورها شروع می‌شود.
+	SensorHealth_Init();
 
 	qSensors = xQueueCreate(1, sizeof(tof_payload_t));
 	if(qSensors == NULL)  Error_Handler();
@@ -216,7 +222,10 @@ void StartDefaultTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+
+	// پردازش non-blocking baseline
+
+    osDelay(10);
   }
   /* USER CODE END StartDefaultTask */
 }
@@ -232,8 +241,11 @@ void SensorTask(void *argument)
 {
   (void)argument;
 
+	#if DBG_BUS_STATUS
+		TickType_t lastPrint = 0;   // NOTE: فقط وقتی debug باس فعال است استفاده می‌شود
+	#endif
+
   tof_payload_t pkt;
-  TickType_t lastPrint = 0;
 
   memset(&pkt, 0, sizeof(pkt));
 
@@ -252,6 +264,11 @@ void SensorTask(void *argument)
   VL53L4CD_SetI2CHandle(&hi2c4);
   VL53L4CD_Init_Multi_I2C4();
 
+  // شروع baseline بعد از init کامل سنسورها
+  // NOTE: اینجا سنسورها address گرفته‌اند و آماده read هستند
+  SensorBaseline_Start();
+
+
   printf("SensorTask started\r\n");
 
   for (;;)
@@ -262,6 +279,15 @@ void SensorTask(void *argument)
     if (v_I2C3_Bus) VL53L4CD_SensorRead_I2C3();
     if (v_I2C4_Bus) VL53L4CD_SensorRead_I2C4();
 
+    // پردازش baseline بعد از به‌روزرسانی data[]
+    // NOTE:
+    // baseline باید بعد از SensorRead اجرا شود،
+    // چون از ptrTof_1->data[] و sens_status[] نمونه می‌گیرد.
+    SensorBaseline_Process();
+    if (SensorBaseline_IsDone())
+    {
+        SensorHealth_Process();
+    }
     /* مستقیم از data[] پکت بساز */
     for (uint8_t i = 0; i < 32; i++) {
       pkt.d[i] = clamp_u8(ptrTof_1->data[i]);
@@ -271,23 +297,26 @@ void SensorTask(void *argument)
 
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    /* لاگ سبک برای دیباگ */
-    if ((xTaskGetTickCount() - lastPrint) > pdMS_TO_TICKS(1000))
-    {
-      lastPrint = xTaskGetTickCount();
+	#if DBG_BUS_STATUS
 
-      printf("BUS EN: I2C1=%u I2C2=%u I2C3=%u I2C4=%u | I2C1 DATA: ",
-             (unsigned)v_I2C1_Bus,
-             (unsigned)v_I2C2_Bus,
-             (unsigned)v_I2C3_Bus,
-             (unsigned)v_I2C4_Bus);
+			if ((xTaskGetTickCount() - lastPrint) > pdMS_TO_TICKS(1000))
+			{
+				lastPrint = xTaskGetTickCount();
 
-      for (int i = 0; i < 8; i++) {
-        printf("%u ", pkt.d[i]);
-      }
+				printf("BUS EN: I2C1=%u I2C2=%u I2C3=%u I2C4=%u | DATA: ",
+					   v_I2C1_Bus,
+					   v_I2C2_Bus,
+					   v_I2C3_Bus,
+					   v_I2C4_Bus);
 
-      printf("\r\n");
-    }
+				for (int i = 0; i < 8; i++) {
+					printf("%u ", pkt.d[i]);
+				}
+
+				printf("\r\n");
+			}
+
+	#endif
   }
 }
 
@@ -308,7 +337,7 @@ void CmdTask(void *argument)
   {
     if (xQueueReceive(canRxQueue, &f, portMAX_DELAY) == pdPASS)
     {
-      HAL_GPIO_TogglePin(LED7_GPIO_Port, LED7_Pin);
+     // HAL_GPIO_TogglePin(LED7_GPIO_Port, LED7_Pin);
 
       // اگر خواستی چاپ هم بکن
       // printf("RX id=0x%lX dlc=%u data0=0x%02X\r\n", f.id, f.dlc, f.data[0]);
@@ -340,9 +369,45 @@ void CanTxTask(void *argument)
 /* USER CODE BEGIN Application */
 void DebugTask(void *argument)
 {
+
     while(1)
     {
         HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+
+	#if DBG_HEALTH
+
+
+		if (SensorBaseline_IsDone())
+		{
+			const sensor_baseline_data_t *b = SensorBaseline_GetData();
+
+			// گرفتن health فعلی سنسورها
+			// NOTE: فقط برای دیباگ چاپ استفاده می‌شود
+			const sensor_health_t *h = SensorHealth_GetAll();
+
+			printf("HEALTH:\r\n");
+
+			// چاپ سلامت فقط برای سنسورهایی که baseline معتبر دارند
+			// NOTE: سنسورهای وصل‌نشده یا بدون baseline چاپ نمی‌شوند
+			for (int i = 0; i < 32; i++)
+			{
+				if (b->valid[i])
+				{
+					printf("H[%02d] valid=%u load=%u noisy=%u no_upd=%u stuck=%u fault=%u\r\n",
+						   i,
+						   h[i].is_valid,
+						   h[i].is_loaded,
+						   h[i].is_noisy,
+						   h[i].is_no_update,
+						   h[i].is_stuck,
+						   h[i].fault);
+				}
+			}
+
+		}
+
+	#endif
+
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }

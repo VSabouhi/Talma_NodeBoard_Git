@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include "utils.h"
 #include "v_VL53L4CD.h"
+#include "sensor_health.h"   // برای دسترسی به health سنسورها
 /*----------------------------------------------------------------------------*/
 
 
@@ -20,10 +21,15 @@
 #define BOARD_ID        1
 #define TX_PERIOD_MS    1000
 #define BASE_ID         0x100
+// CAN ID layout:
+// Sensor data  : BASE_ID        + (BOARD_ID << 2) + chunk
+// Sensor health: HEALTH_BASE_ID + (BOARD_ID << 2) + chunk
+#define HEALTH_BASE_ID  0x200
 /*----------------------------------------------------------------------------*/
 extern QueueHandle_t qSensors;
 // ===== داده نود =====
 static uint8_t sensors[32];
+static uint8_t sensor_health_payload[32];   // بایت health هر سنسور برای ارسال روی CAN
 static uint8_t sensors_packed[32];   // بایت نهایی هر سنسور برای ارسال روی CAN
 /*----------------------------------------------------------------------------*/
 static HAL_StatusTypeDef CAN_SendChunk(uint16_t id, const uint8_t *data8);
@@ -83,15 +89,30 @@ static HAL_StatusTypeDef CAN_SendChunk(uint16_t id, const uint8_t *data8)
 }
 /*----------------------------------------------------------------------------*/
 
-/*static void MakeFakeSensors(void)
+
+/*----------------------------------------------------------------------------*/
+
+// تبدیل health داخلی سنسور به یک بایت قابل ارسال روی CAN
+// bit0 = valid
+// bit1 = load/body detected
+// bit2 = noisy
+// bit3 = no_update
+// bit4 = stuck
+// bit5 = fault
+// bit6..7 = reserved
+static uint8_t PackHealthByte(const sensor_health_t *h)
 {
-  static uint8_t base = 0;
-  for (int i = 0; i < 32; i++)
-    sensors[i] = (uint8_t)((base + i) % 100);
-  base = (uint8_t)((base + 1) % 100);
-}*/
+    uint8_t b = 0;
 
+    if (h->is_valid)     b |= (1u << 0);
+    if (h->is_loaded)    b |= (1u << 1);
+    if (h->is_noisy)     b |= (1u << 2);
+    if (h->is_no_update) b |= (1u << 3);
+    if (h->is_stuck)     b |= (1u << 4);
+    if (h->fault)        b |= (1u << 5);
 
+    return b;
+}
 /*----------------------------------------------------------------------------*/
 /*
 Packed CAN sensor byte format:
@@ -103,6 +124,7 @@ bit7..6 = status
 
 bit5..0 = sensor value (0..63)
 */
+/*----------------------------------------------------------------------------*/
 
 static void SendAll4Chunks(void)
 {
@@ -138,6 +160,32 @@ static void SendAll4Chunks(void)
   (void)CAN_SendChunk(id1, &sensors_packed[8]);
   (void)CAN_SendChunk(id2, &sensors_packed[16]);
   (void)CAN_SendChunk(id3, &sensors_packed[24]);
+}
+
+
+static void SendHealth4Chunks(void)
+{
+    uint16_t id0 = HEALTH_BASE_ID + (BOARD_ID << 2) + 0;
+    uint16_t id1 = HEALTH_BASE_ID + (BOARD_ID << 2) + 1;
+    uint16_t id2 = HEALTH_BASE_ID + (BOARD_ID << 2) + 2;
+    uint16_t id3 = HEALTH_BASE_ID + (BOARD_ID << 2) + 3;
+
+    const sensor_health_t *h = SensorHealth_GetAll();
+
+    // ساخت payload سلامت برای 32 سنسور
+    // NOTE:
+    // هر سنسور یک بایت health دارد.
+    // ترتیب health دقیقاً مثل ترتیب sensor data است.
+    for (int i = 0; i < 32; i++)
+    {
+        sensor_health_payload[i] = PackHealthByte(&h[i]);
+    }
+
+    // ارسال health در 4 فریم 8 بایتی
+    (void)CAN_SendChunk(id0, &sensor_health_payload[0]);
+    (void)CAN_SendChunk(id1, &sensor_health_payload[8]);
+    (void)CAN_SendChunk(id2, &sensor_health_payload[16]);
+    (void)CAN_SendChunk(id3, &sensor_health_payload[24]);
 }
 /*----------------------------------------------------------------------------*/
 
@@ -177,6 +225,11 @@ void CAN_NodeTxTask(void *argument)
         }
 
         SendAll4Chunks();
+
+        // ارسال health سنسورها بعد از data
+        // NOTE:
+        // Main Board با این فریم‌ها می‌فهمد کدام data معتبر، loaded، noisy یا fault است.
+        SendHealth4Chunks();
     }
 }
 
