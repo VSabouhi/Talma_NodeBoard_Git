@@ -39,6 +39,7 @@
 #include <stdio.h>
 #include "sensor_baseline.h"
 #include "sensor_health.h"
+#include "motor_control.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -140,6 +141,11 @@ void MX_FREERTOS_Init(void) {
 	// این فقط history داخلی health را پاک می‌کند.
 	// baseline جداگانه بعد از init سنسورها شروع می‌شود.
 	SensorHealth_Init();
+	// مقداردهی اولیه لایه کنترل موتور
+	// NOTE:
+	// stepper_init سخت‌افزار را آماده می‌کند.
+	// MotorControl_Init فقط state نرم‌افزاری actuatorها را آماده می‌کند.
+	MotorControl_Init();
 
 	qSensors = xQueueCreate(1, sizeof(tof_payload_t));
 	if(qSensors == NULL)  Error_Handler();
@@ -223,7 +229,7 @@ void StartDefaultTask(void *argument)
   for(;;)
   {
 
-	// پردازش non-blocking baseline
+	Motor_Process();
 
     osDelay(10);
   }
@@ -370,6 +376,7 @@ void CanTxTask(void *argument)
 void DebugTask(void *argument)
 {
 
+
     while(1)
     {
         HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
@@ -408,8 +415,41 @@ void DebugTask(void *argument)
 
 	#endif
 
+
+		#if DBG_MOTOR_TEST
+			static uint8_t motor_test_started = 0;
+
+			if (!motor_test_started)
+			{
+				motor_test_started = 1;
+
+				// تست حرکت موتور 0 به position=200 step
+				// NOTE:
+				// این فقط برای تست اولیه MotorControl است.
+				// بعد از تست، DBG_MOTOR_TEST را صفر کن.
+				printf("MOTOR TEST: motor 0 -> pos 200\r\n");
+				Motor_SetTarget(0, 200);
+			}
+
+			const actuator_t *m = Motor_Get(0);
+
+			printf("M0 pos=%d target=%d moving=%u fault=%u rem=%ld\r\n",
+				   m->current_pos,
+				   m->target_pos,
+				   m->is_moving,
+				   m->fault,
+				   (long)stepper_remaining(0));
+		#endif
+
+
+
+
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+
+
+
+
 }
 /*----------------------------------------------------------------------------*/
 
