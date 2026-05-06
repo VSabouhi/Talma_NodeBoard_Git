@@ -40,6 +40,8 @@
 #include "sensor_baseline.h"
 #include "sensor_health.h"
 #include "motor_control.h"
+#include "tim.h"
+#include "node_test.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -110,6 +112,21 @@ const osThreadAttr_t v_CanTxTask_attributes = {
   .priority = (osPriority_t) osPriorityAboveNormal,
 };
 
+
+/* Definitions for v_TestTask */
+osThreadId_t v_TestTaskHandle;
+uint32_t v_TestTaskBuffer[512];
+osStaticThreadDef_t v_TestTaskControlBlock;
+
+const osThreadAttr_t v_TestTask_attributes = {
+  .name = "v_TestTask",
+  .cb_mem = &v_TestTaskControlBlock,
+  .cb_size = sizeof(v_TestTaskControlBlock),
+  .stack_mem = &v_TestTaskBuffer[0],
+  .stack_size = sizeof(v_TestTaskBuffer),
+  .priority = (osPriority_t) osPriorityLow,
+};
+
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 void DebugTask(void *argument);
@@ -159,6 +176,7 @@ void MX_FREERTOS_Init(void) {
 	                  NULL) != pdPASS) {
 	    Error_Handler();
 	  }
+
 	  if (xTaskCreate(CAN_NodeTxTask,
 	                    "NodeTX",
 	                    NODETX_TASK_STACK_WORDS,
@@ -167,6 +185,8 @@ void MX_FREERTOS_Init(void) {
 	                    NULL) != pdPASS) {
 	      Error_Handler();
 	    }
+
+
   /* USER CODE END Init */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -205,6 +225,12 @@ void MX_FREERTOS_Init(void) {
     Error_Handler();
   }
 
+  // ایجاد task تست‌ها
+  // NOTE:
+  // تمام تست‌های توسعه‌ای داخل TestTask اجرا می‌شوند.
+  // با ماکروهای node_test.h می‌توان هر تست را فعال/غیرفعال کرد.
+  v_TestTaskHandle = osThreadNew(TestTask, NULL, &v_TestTask_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -225,11 +251,48 @@ void MX_FREERTOS_Init(void) {
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
   /* Infinite loop */
   for(;;)
   {
-
+	  static uint8_t heat_beat;
+	  heat_beat++;
 	Motor_Process();
+
+
+	  if(heat_beat % 100 == 0)
+	  {
+		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	  }
+	  else if(heat_beat % 120 == 0)
+	  {
+		  heat_beat= 0;
+		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	  }
+
+
 
     osDelay(10);
   }
@@ -279,6 +342,15 @@ void SensorTask(void *argument)
 
   for (;;)
   {
+
+	  if (g_sensor_cal_busy)
+	  {
+	      // Calibration به دسترسی انحصاری به سنسور نیاز دارد.
+	      // بنابراین هنگام calibration، read و baseline و health را اجرا نمی‌کنیم.
+	      osDelay(20);
+	      continue;
+	  }
+
     /* فقط باس‌های فعال خوانده شوند */
     if (v_I2C1_Bus) VL53L4CD_SensorRead_I2C1();
     if (v_I2C2_Bus) VL53L4CD_SensorRead_I2C2();
@@ -373,7 +445,7 @@ void CanTxTask(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
-void DebugTask(void *argument)
+/*void DebugTask(void *argument)
 {
 
 
@@ -450,6 +522,16 @@ void DebugTask(void *argument)
 
 
 
+}*/
+
+void DebugTask(void *argument)
+{
+
+    while (1)
+    {
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
 /*----------------------------------------------------------------------------*/
 

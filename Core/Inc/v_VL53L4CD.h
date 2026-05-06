@@ -73,4 +73,14 @@ void VL53L4CD_SensorRead_I2C2(void);
 void VL53L4CD_SensorRead_I2C3(void);
 void VL53L4CD_SensorRead_I2C4(void);
 
+// اجرای offset calibration داخلی سنسور برای یک سنسور مشخص
+// target_mm فاصله واقعی target از سنسور است.
+// برای TALMA فعلاً در حالت بدون load مقدار 50mm استفاده می‌کنیم.
+uint8_t VL53L4CD_CalibrateOffset_One(uint8_t idx, int16_t target_mm, int16_t *measured_offset_mm);
+// وقتی 1 باشد، SensorTask نباید سنسورها را read کند.
+// NOTE:
+// برای calibration لازم است دسترسی به VL53L4CD انحصاری باشد.
+extern volatile uint8_t g_sensor_cal_busy;
+/*----------------------------------------------------------*/
+
 #endif /* INC_V_VL53L4CD_H_ */

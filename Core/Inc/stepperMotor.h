@@ -27,6 +27,8 @@ typedef enum {
 void stepper_init(void);
 // سرعت مشترک (Hz): تعداد step در ثانیه
 void stepper_set_speed_hz(uint32_t step_hz);
+
+uint32_t stepper_get_speed_hz(void);
 // حرکت مستقل با سرعت مشترک
 stepper_status_t stepper_move_motor(uint8_t motor_id, int32_t steps_signed);
 // حرکت گروهی (همه‌ی موتورها در mask)

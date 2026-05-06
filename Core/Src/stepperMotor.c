@@ -21,7 +21,8 @@ static volatile uint32_t g_active_mask = 0;
 static volatile int32_t  g_rem[STEPPER_MOTOR_COUNT];
 /*----------------------------------------------------------------------------*/
 void v_motor_speed_update(uint16_t v_data);
-
+// Prototype for internal timer config
+static void tim3_apply_step_hz(uint32_t hz);
 /*----------------------------------------------------------------------------*/
 static inline void driver_enable(uint8_t id, bool en)
 {
@@ -42,16 +43,19 @@ static inline void set_dir(uint8_t id, stepper_dir_t dir)
 /*----------------------------------------------------------------------------*/
 static inline void pwm_start_if_needed(void)
 {
-  // سرعت: ARR=10000 (ولی v_motor_speed_update باید ARR/CCR را تنظیم کند، نه Start)
-  v_motor_speed_update(200);
+  // اعمال سرعت مشترک قبل از شروع PWM
+  // IMPORTANT:
+  // stepper_move_mask از این مسیر استفاده می‌کند.
+  // اگر اینجا tim3_apply_step_hz صدا زده نشود، موتور با ARR قبلی یا مقدار CubeMX حرکت می‌کند.
+  tim3_apply_step_hz(g_step_hz);
 
   // اگر CCR صفر باشد PWM خروجی ندارد
   uint32_t arr = __HAL_TIM_GET_AUTORELOAD(&htim3);
   if (__HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_4) == 0)
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_4, arr/2);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_4, arr / 2);
 
   __HAL_TIM_SET_COUNTER(&htim3, 0);
-  __HAL_TIM_CLEAR_FLAG(&htim3, TIM_FLAG_UPDATE);   // ⭐ مهم
+  __HAL_TIM_CLEAR_FLAG(&htim3, TIM_FLAG_UPDATE);
 
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
   HAL_TIM_Base_Start_IT(&htim3);
@@ -83,6 +87,13 @@ void stepper_set_speed_hz(uint32_t hz)
   if (hz < 1) hz = 1;
   if (hz > 50000) hz = 50000;
   g_step_hz = hz;
+}
+/*----------------------------------------------------------------------------*/
+
+uint32_t stepper_get_speed_hz(void)
+{
+    // سرعت فعلی PWM مشترک موتور‌ها بر حسب Hz
+    return g_step_hz;
 }
 /*----------------------------------------------------------------------------*/
 static void tim3_apply_step_hz(uint32_t hz)

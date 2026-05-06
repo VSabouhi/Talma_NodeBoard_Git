@@ -18,14 +18,28 @@
 // timeout حرکت موتور
 // NOTE:
 // اگر موتور بیش از این زمان در حال حرکت بماند، fault می‌گیرد.
-#define MOTOR_MOVE_TIMEOUT_MS 10000
+#define MOTOR_MOVE_TIMEOUT_MARGIN_MS   500      // 500
+#define MOTOR_MOVE_TIMEOUT_MAX_MS      10000       // 10000
+/*----------------------------------------------------------------------------*/
+
+typedef enum
+{
+    MOTOR_FAULT_NONE = 0,
+    MOTOR_FAULT_COMMAND_TIMEOUT,
+    MOTOR_FAULT_COMMAND_REJECTED
+} motor_fault_t;
+/*----------------------------------------------------------------------------*/
 
 typedef struct
 {
-    int16_t current_pos;     // موقعیت تخمینی فعلی موتور بر حسب step
-    int16_t target_pos;      // موقعیت هدف
-    uint8_t is_moving;       // آیا موتور در حال حرکت است؟
-    uint8_t fault;           // خطای موتور
+    int32_t current_pos;       // موقعیت تخمینی فعلی موتور بر حسب step
+    int32_t target_pos;        // موقعیت هدف بر حسب step
+    int32_t move_start_pos;    // موقعیت موتور در لحظه شروع حرکت
+    int32_t commanded_steps;   // تعداد step فرمان داده‌شده در حرکت فعلی
+
+    uint8_t is_moving;
+    uint8_t fault;             // 1 یعنی موتور در fault نرم‌افزاری است
+    motor_fault_t fault_type;   // نوع fault؛ stuck مکانیکی واقعی نیست مگر feedback داشته باشیم
 } actuator_t;
 /*----------------------------------------------------------------------------*/
 
@@ -34,6 +48,11 @@ void MotorControl_Init(void);
 
 // تنظیم هدف برای یک موتور
 void Motor_SetTarget(uint8_t idx, int16_t pos);
+
+void Motor_GoHome(uint8_t idx);
+void Motor_GoHomeAll(void);
+void Motor_JogSteps(uint8_t idx, int16_t delta_steps);
+void Motor_ForceSetHome(uint8_t idx);
 
 // پردازش وضعیت موتورها
 void Motor_Process(void);

@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "vl53l4cd_calibration.h"
 // ================== Types ==================
 typedef enum { BUS_I2C1=0, BUS_I2C2=1, BUS_I2C3=2, BUS_I2C4=3 } bus_id_t;
 
@@ -22,6 +23,10 @@ bool v_I2C4_Bus = false;
 
 uint8_t sens_online[SENSOR_COUNT] = {0};
 sens_status_t sens_status[SENSOR_COUNT] = {0};
+// وقتی calibration در حال اجراست، SensorTask باید read سنسورها را متوقف کند.
+// IMPORTANT:
+// VL53L4CD_CalibrateOffset خودش StartRanging/StopRanging انجام می‌دهد.
+volatile uint8_t g_sensor_cal_busy = 0;
 
 // was online at least once?
 static uint8_t g_everOnline[SENSOR_COUNT] = {0};
@@ -587,6 +592,7 @@ void VL53L4CD_Init_Multi_I2C1(void){ InitBus_Generic(BUS_I2C1, 0, 8);  }
 void VL53L4CD_Init_Multi_I2C2(void){ InitBus_Generic(BUS_I2C2, 8, 16); }
 void VL53L4CD_Init_Multi_I2C3(void){ InitBus_Generic(BUS_I2C3, 16, 24);}
 void VL53L4CD_Init_Multi_I2C4(void){ InitBus_Generic(BUS_I2C4, 24, 32);}
+/*----------------------------------------------------------------------------*/
 
 void VL53L4CD_SensorRead_I2C1(void)
 {
@@ -607,3 +613,167 @@ void VL53L4CD_SensorRead_I2C4(void)
 {
   ReadBus_Generic(BUS_I2C4, LED6_GPIO_Port, LED6_Pin, 24, 32, "I2C4");
 }
+/*----------------------------------------------------------------------------*/
+
+uint8_t VL53L4CD_CalibrateOffset_One(uint8_t idx, int16_t target_mm, int16_t *measured_offset_mm)
+{
+  if (idx >= SENSOR_COUNT)
+    return 1;
+
+  if (measured_offset_mm == NULL)
+    return 2;
+
+  if (sens_online[idx] == 0)
+    return 3;
+
+  // انتخاب bus بر اساس index سنسور
+  // سنسورهای 0..7 روی I2C1
+  // سنسورهای 8..15 روی I2C2
+  // سنسورهای 16..23 روی I2C3
+  // سنسورهای 24..31 روی I2C4
+  if (idx < 8)
+  {
+    SetBusHandle(BUS_I2C1);
+  }
+  else if (idx < 16)
+  {
+    SetBusHandle(BUS_I2C2);
+  }
+  else if (idx < 24)
+  {
+    SetBusHandle(BUS_I2C3);
+  }
+  else
+  {
+    SetBusHandle(BUS_I2C4);
+  }
+
+  // IMPORTANT:
+  // Offset calibration باید فقط وقتی اجرا شود که پیکسل بدون load باشد
+  // و target واقعی در فاصله target_mm قرار داشته باشد.
+  //
+  // NOTE:
+  // این تابع خودش load را تشخیص نمی‌دهد.
+  // guard مربوط به unloaded بودن را در لایه بالاتر انجام می‌دهیم.
+
+  // قبل از calibration چند sample خام می‌گیریم
+  // تا مطمئن شویم پیکسل بدون load است
+  // و reading نزدیک target expected است.
+  VL53L4CD_ResultsData_t pre_results;
+
+  uint32_t sum = 0;
+  uint16_t min_mm = 0xFFFF;
+  uint16_t max_mm = 0;
+
+  for (uint8_t i = 0; i < 10; i++)
+  {
+      uint8_t ready = 0;
+      uint16_t timeout = 0;
+
+      do
+      {
+          VL53L4CD_CheckForDataReady(dev[idx], &ready);
+          vTaskDelay(pdMS_TO_TICKS(5));
+          timeout += 5;
+      }
+      while ((ready == 0) && (timeout < 1000));
+
+      if (!ready)
+      {
+          return 4;
+      }
+
+      VL53L4CD_GetResult(dev[idx], &pre_results);
+      VL53L4CD_ClearInterrupt(dev[idx]);
+
+      uint16_t mm = pre_results.distance_mm;
+
+      printf("PRE CAL SENSOR[%u]: %umm\r\n", idx, mm);
+
+      sum += mm;
+
+      if (mm < min_mm)
+          min_mm = mm;
+
+      if (mm > max_mm)
+          max_mm = mm;
+
+      vTaskDelay(pdMS_TO_TICKS(50));
+  }
+
+  uint16_t avg_mm = (uint16_t)(sum / 10);
+
+  printf("PRE CAL SENSOR[%u]: avg=%u min=%u max=%u\r\n",
+         idx,
+         avg_mm,
+         min_mm,
+         max_mm);
+
+  // اگر reading خیلی دور از target باشد یا unstable باشد، calibration اجرا نمی‌شود.
+  // IMPORTANT:
+  // calibration در حالت load نتیجه غلط می‌دهد.
+  if ((avg_mm < 45) || (avg_mm > 55))
+  {
+      printf("PRE CAL SENSOR[%u]: REJECT avg out of range\r\n", idx);
+      return 5;
+  }
+
+  if ((max_mm - min_mm) > 6)
+  {
+      printf("PRE CAL SENSOR[%u]: REJECT unstable\r\n", idx);
+      return 6;
+  }
+
+  VL53L4CD_StopRanging(dev[idx]);
+  vTaskDelay(pdMS_TO_TICKS(10));
+
+  // nb_samples = 20
+  // تعداد نمونه‌های offset calibration.
+  // NOTE:
+  // طبق API مقدار nb_samples باید بین 5 تا 255 باشد.
+  uint8_t st = VL53L4CD_CalibrateOffset(dev[idx],
+                                        target_mm,
+                                        measured_offset_mm,
+                                        20);
+
+  vTaskDelay(pdMS_TO_TICKS(10));
+  VL53L4CD_StartRanging(dev[idx]);
+
+
+
+  // بعد از calibration چند sample می‌گیریم
+  // تا ببینیم reading به target نزدیک شده یا نه.
+  VL53L4CD_ResultsData_t results;
+
+  for (uint8_t i = 0; i < 5; i++)
+  {
+      uint8_t ready = 0;
+      uint16_t timeout = 0;
+
+      do
+      {
+          VL53L4CD_CheckForDataReady(dev[idx], &ready);
+          vTaskDelay(pdMS_TO_TICKS(5));
+          timeout += 5;
+      }
+      while ((ready == 0) && (timeout < 1000));
+
+      if (ready)
+      {
+          VL53L4CD_GetResult(dev[idx], &results);
+
+          printf("CAL SENSOR[%u]: RANGE=%umm STATUS=%u\r\n",
+                 idx,
+                 results.distance_mm,
+                 results.range_status);
+
+          VL53L4CD_ClearInterrupt(dev[idx]);
+      }
+
+      vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  return st;
+}
+/*----------------------------------------------------------------------------*/
+
