@@ -188,14 +188,30 @@ void Motor_GoHome(uint8_t idx)
 
 void Motor_GoHomeAll(void)
 {
-    // همه موتورهایی که position تخمینی غیر صفر دارند،
-    // به home نرم‌افزاری برگردانده می‌شوند.
-    // NOTE:
-    // فعلاً Motor_SetTarget تک‌موتوره است؛ اگر low-level busy باشد،
-    // ممکن است فقط اولین موتور حرکت کند و بقیه fault بگیرند.
-    // در فازهای بعد برای group execution تابع جدا می‌سازیم.
+    // mhomeall:
+    // Return all moved motors back to software home (position = 0).
+    //
+    // IMPORTANT:
+    // This is NOT physical homing.
+    // Startup position is assumed to be home.
+    // Each motor returns using its stored software position.
+
+    // Safety: do not start home-all if any motor is currently moving.
+    // This prevents corrupting software position bookkeeping.
     for (uint8_t i = 0; i < MOTOR_COUNT; i++)
     {
+        if (g_motor[i].is_moving)
+            return;
+    }
+
+    for (uint8_t i = 0; i < MOTOR_COUNT; i++)
+    {
+        // Skip faulted motors.
+        // Fault reset should be handled by a separate command later.
+        if (g_motor[i].fault)
+            continue;
+
+        // Only motors that moved away from software home need to return.
         if (g_motor[i].current_pos != MOTOR_POS_MIN)
         {
             Motor_GoHome(i);
@@ -232,6 +248,85 @@ void Motor_JogSteps(uint8_t idx, int16_t delta_steps)
     Motor_SetTarget(idx, (int16_t)new_target);
 }
 
+
+/*----------------------------------------------------------------------------*/
+
+void Motor_JogMaskSteps(uint32_t mask, int16_t delta_steps)
+{
+    if (mask == 0)
+        return;
+
+    if (delta_steps == 0)
+        return;
+
+    int32_t steps = (delta_steps > 0) ? delta_steps : -delta_steps;
+    stepper_dir_t dir = (delta_steps > 0) ? STEPPER_DIR_CW : STEPPER_DIR_CCW;
+
+    // Check all selected motors before starting group move.
+    // If one motor is invalid, moving, faulted, or out of range,
+    // reject the whole group command.
+    for (uint8_t i = 0; i < MOTOR_COUNT; i++)
+    {
+        if ((mask & (1u << i)) == 0)
+            continue;
+
+        if (g_motor[i].is_moving)
+            return;
+
+        if (g_motor[i].fault)
+            return;
+
+        int32_t new_target = g_motor[i].current_pos + delta_steps;
+
+        if (new_target < MOTOR_POS_MIN || new_target > MOTOR_POS_MAX)
+            return;
+    }
+
+    uint32_t hz = stepper_get_speed_hz();
+
+    if (hz == 0)
+        return;
+
+    uint32_t expected_ms = (uint32_t)(((uint64_t)steps * 1000u) / hz);
+    uint32_t timeout_ms = expected_ms + MOTOR_MOVE_TIMEOUT_MARGIN_MS;
+
+    if (timeout_ms > MOTOR_MOVE_TIMEOUT_MAX_MS)
+        timeout_ms = MOTOR_MOVE_TIMEOUT_MAX_MS;
+
+    TickType_t now = xTaskGetTickCount();
+
+    // Bookkeeping for all selected motors.
+    for (uint8_t i = 0; i < MOTOR_COUNT; i++)
+    {
+        if ((mask & (1u << i)) == 0)
+            continue;
+
+        g_motor[i].move_start_pos = g_motor[i].current_pos;
+        g_motor[i].target_pos = g_motor[i].current_pos + delta_steps;
+        g_motor[i].commanded_steps = steps;
+        g_motor[i].is_moving = 1;
+
+        g_move_start[i] = now;
+        g_move_timeout[i] = pdMS_TO_TICKS(timeout_ms);
+    }
+
+    stepper_status_t st = stepper_move_mask(mask, steps, dir);
+
+    if (st != STEPPER_OK)
+    {
+        // Low-level rejected the command.
+        // Mark all selected motors as command rejected.
+        for (uint8_t i = 0; i < MOTOR_COUNT; i++)
+        {
+            if ((mask & (1u << i)) == 0)
+                continue;
+
+            g_motor[i].is_moving = 0;
+            g_motor[i].fault = 1;
+            g_motor[i].fault_type = MOTOR_FAULT_COMMAND_REJECTED;
+        }
+    }
+}
 /*----------------------------------------------------------------------------*/
 
 void Motor_ForceSetHome(uint8_t idx)

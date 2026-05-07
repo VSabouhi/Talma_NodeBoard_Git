@@ -418,8 +418,13 @@ void CmdTask(void *argument)
      // HAL_GPIO_TogglePin(LED7_GPIO_Port, LED7_Pin);
 
       // اگر خواستی چاپ هم بکن
-      // printf("RX id=0x%lX dlc=%u data0=0x%02X\r\n", f.id, f.dlc, f.data[0]);
-      print_can_frame(&f);
+    	CAN_RX_LOG("id=0x%03lX dlc=%u flags=0x%02X data=%02X %02X %02X %02X %02X %02X %02X %02X",
+    	           f.id,
+    	           f.dlc,
+    	           f.flags,
+    	           f.data[0], f.data[1], f.data[2], f.data[3],
+    	           f.data[4], f.data[5], f.data[6], f.data[7]);
+
       motor_cmd_dispatch(&f, BOARD_ID);
     }
   }

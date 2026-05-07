@@ -52,6 +52,10 @@ void Motor_SetTarget(uint8_t idx, int16_t pos);
 void Motor_GoHome(uint8_t idx);
 void Motor_GoHomeAll(void);
 void Motor_JogSteps(uint8_t idx, int16_t delta_steps);
+// Jog multiple motors with the same delta.
+// mask bit i = motor i.
+// Example: mask 0x0000000F means motors 0,1,2,3.
+void Motor_JogMaskSteps(uint32_t mask, int16_t delta_steps);
 void Motor_ForceSetHome(uint8_t idx);
 
 // پردازش وضعیت موتورها

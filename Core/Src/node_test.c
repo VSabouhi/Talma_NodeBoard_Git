@@ -97,16 +97,39 @@ static void Test_Cli_Process(void)
     line[sizeof(line) - 1] = '\0';
 
     printf("CLI LINE: [%s]\r\n", line);
+    // Trim leading spaces before parsing CLI command
+    char *cmd = line;
+
+    // Trim leading spaces before parsing CLI command
+    while (*cmd == ' ' || *cmd == '\t')
+    {
+        cmd++;
+    }
 
     int motor_idx = 0;
     int delta_steps = 0;
+    unsigned long mask_ul = 0;
+    int argc = 0;
+    char *argv[1 + (MOTOR_COUNT * 2)];
 
-    if (sscanf(line, "mj %d %d", &motor_idx, &delta_steps) == 2)
+
+    if (sscanf(cmd, "mj %d %d", &motor_idx, &delta_steps) == 2)
     {
         printf("CLI: mj idx=%d delta=%d\r\n", motor_idx, delta_steps);
         Motor_JogSteps((uint8_t)motor_idx, (int16_t)delta_steps);
     }
-    else if (sscanf(line, "mpos %d", &motor_idx) == 1)
+    else if (sscanf(cmd, "mjm %lx %d", &mask_ul, &delta_steps) == 2)
+    {
+        // mjm <mask_hex> <delta>
+        // Group jog command.
+        //
+        // Example:
+        // mjm 0000000F 200
+        // moves motors 0,1,2,3 by +200 steps.
+        printf("CLI: mjm mask=0x%08lX delta=%d\r\n", mask_ul, delta_steps);
+        Motor_JogMaskSteps((uint32_t)mask_ul, (int16_t)delta_steps);
+    }
+    else if (sscanf(cmd, "mpos %d", &motor_idx) == 1)
     {
         const actuator_t *m = Motor_Get((uint8_t)motor_idx);
 
@@ -128,14 +151,81 @@ static void Test_Cli_Process(void)
                    (unsigned)m->fault_type);
         }
     }
-    else if (sscanf(line, "mhome %d", &motor_idx) == 1)
+    else if (sscanf(cmd, "mhome %d", &motor_idx) == 1)
     {
+        // mhome <idx>
+        // Move motor back to software home position (position = 0).
+        //
+        // IMPORTANT:
+        // This is NOT physical homing.
+        // We assume startup position is home.
+        // The motor returns by reversing the stored software position.
         printf("CLI: mhome idx=%d\r\n", motor_idx);
+        Motor_GoHome((uint8_t)motor_idx);
+    }
+    else if (strcmp(cmd, "mhomeall") == 0)
+    {
+        // mhomeall
+        // Return all moved motors back to software home.
+        //
+        // IMPORTANT:
+        // This is NOT physical homing.
+        // It only reverses stored software positions.
+        printf("CLI: mhomeall\r\n");
+        Motor_GoHomeAll();
+    }
+    else if (sscanf(cmd, "mzero %d", &motor_idx) == 1)
+    {
+        // mzero <idx>
+        // Force software position to zero WITHOUT moving the motor.
+        //
+        // Use only when operator is sure the motor is physically at home.
+        printf("CLI: mzero idx=%d\r\n", motor_idx);
         Motor_ForceSetHome((uint8_t)motor_idx);
+    }
+    else if (strncmp(cmd, "mjv", 3) == 0)
+    {
+        // mjv <idx0> <delta0> <idx1> <delta1> ...
+        //
+        // Supports up to MOTOR_COUNT motors.
+        //
+        // Example:
+        // mjv 0 100 1 200 2 -150
+        //
+        // Current implementation:
+        // Sequential execution, not simultaneous.
+
+        argc = 0;
+
+        char *tok = strtok(cmd, " \t");
+
+        while (tok != NULL && argc < (int)(1 + (MOTOR_COUNT * 2)))
+        {
+            argv[argc++] = tok;
+            tok = strtok(NULL, " \t");
+        }
+
+        if (argc < 3 || ((argc - 1) % 2) != 0)
+        {
+            printf("CLI: mjv bad args\r\n");
+        }
+        else
+        {
+            printf("CLI: mjv motors=%d\r\n", (argc - 1) / 2);
+
+            for (int i = 1; i < argc; i += 2)
+            {
+                int idx = atoi(argv[i]);
+                int delta = atoi(argv[i + 1]);
+
+                printf("  motor=%d delta=%d\r\n", idx, delta);
+                Motor_JogSteps((uint8_t)idx, (int16_t)delta);
+            }
+        }
     }
     else
     {
-        printf("CLI: unknown [%s]\r\n", line);
+        printf("CLI: unknown [%s]\r\n", cmd);
     }
 
     // Safety re-arm
