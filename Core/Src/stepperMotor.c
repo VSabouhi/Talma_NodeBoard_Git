@@ -5,7 +5,7 @@
 #include "tim.h"
 
 /*----------------------------------------------------------------------------*/
-static volatile uint32_t g_step_hz = 1000;   // پیش‌فرض
+static volatile uint32_t g_step_hz = 1000;   //   1000 پ یش‌فرض
 /*----------------------------------------------------------------------------*/
 typedef struct {
   GPIO_TypeDef* gate_port; uint16_t gate_pin; // PixXX_PW : gate buffer

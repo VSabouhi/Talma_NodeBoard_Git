@@ -57,6 +57,18 @@ void Motor_JogSteps(uint8_t idx, int16_t delta_steps);
 // Example: mask 0x0000000F means motors 0,1,2,3.
 void Motor_JogMaskSteps(uint32_t mask, int16_t delta_steps);
 void Motor_ForceSetHome(uint8_t idx);
+// Clear software fault for one motor.
+// NOTE:
+// This does NOT move the motor.
+// This does NOT change current_pos.
+// Main must decide what recovery action is safe after reset.
+void Motor_ResetFault(uint8_t idx);
+
+// Clear software fault for all motors.
+// NOTE:
+// This only clears software fault flags.
+// It does not home, move, or retry any motor.
+void Motor_ResetFaultAll(void);
 
 // پردازش وضعیت موتورها
 void Motor_Process(void);

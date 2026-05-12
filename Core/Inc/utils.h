@@ -21,7 +21,7 @@ static inline uint8_t clamp_u8(int32_t v)
 #define DBG_HEALTH        0
 #define DBG_SENSOR_DATA   0
 #define DBG_BUS_STATUS    0
-#define DBG_MOTOR_TEST    1   // تست ساده موتور از DebugTask
+#define DBG_MOTOR_TEST    0   // تست ساده موتور از DebugTask
 
 // ================= DEBUG MACROS =================
 

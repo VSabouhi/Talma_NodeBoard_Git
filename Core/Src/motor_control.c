@@ -3,6 +3,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include <string.h>
+#include "motor_cmd.h"
+#include "utils.h"
 /*----------------------------------------------------------------------------*/
 
 // وضعیت همه actuatorها
@@ -351,6 +353,44 @@ void Motor_ForceSetHome(uint8_t idx)
     g_motor[idx].fault = 0;
     g_motor[idx].fault_type = MOTOR_FAULT_NONE;
 }
+
+/*----------------------------------------------------------------------------*/
+
+void Motor_ResetFault(uint8_t idx)
+{
+    if (idx >= MOTOR_COUNT)
+        return;
+
+    // Do not reset fault while the motor is still moving.
+    // NOTE:
+    // Fault reset is a recovery action after motion has stopped.
+    if (g_motor[idx].is_moving)
+        return;
+
+    // Clear only software fault state.
+    // IMPORTANT:
+    // Do not change current_pos here.
+    // Without physical homing, current_pos is still the best software estimate.
+    g_motor[idx].fault = 0;
+    g_motor[idx].fault_type = MOTOR_FAULT_NONE;
+    g_motor[idx].commanded_steps = 0;
+}
+
+/*----------------------------------------------------------------------------*/
+
+void Motor_ResetFaultAll(void)
+{
+    for (uint8_t i = 0; i < MOTOR_COUNT; i++)
+    {
+        // Reset only motors that are not moving.
+        // NOTE:
+        // Active motion must be stopped first using STOP command.
+        if (!g_motor[i].is_moving)
+        {
+            Motor_ResetFault(i);
+        }
+    }
+}
 /*----------------------------------------------------------------------------*/
 
 void Motor_Process(void)
@@ -370,6 +410,8 @@ void Motor_Process(void)
             g_motor[i].current_pos = g_motor[i].target_pos;
             g_motor[i].is_moving = 0;
             g_motor[i].commanded_steps = 0;
+            MotorCmd_NotifyMotorDone(i);
+
             continue;
         }
 
@@ -384,6 +426,14 @@ void Motor_Process(void)
             // چون سنسور position نداریم، این بهترین تخمین نرم‌افزاری ماست.
             update_estimated_position(i);
 
+            MOTOR_CTRL_LOG(
+                "TIMEOUT idx=%u pos=%ld target=%ld rem=%ld elapsed=%lu",
+                i,
+                (long)g_motor[i].current_pos,
+                (long)g_motor[i].target_pos,
+                (long)stepper_remaining(i),
+                (unsigned long)(now - g_move_start[i]));
+
             stepper_stop_motor(i);
 
             g_motor[i].is_moving = 0;
@@ -394,6 +444,7 @@ void Motor_Process(void)
             // این stuck مکانیکی را ثابت نمی‌کند، چون feedback موتور نداریم.
             g_motor[i].fault = 1;
             g_motor[i].fault_type = MOTOR_FAULT_COMMAND_TIMEOUT;
+            MotorCmd_NotifyMotorFault(i, MOTOR_STATUS_FAULT_TIMEOUT);
         }
     }
 }

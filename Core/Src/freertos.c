@@ -138,7 +138,6 @@ void StartDefaultTask(void *argument);
 void SensorTask(void *argument);
 void CmdTask(void *argument);
 void CanTxTask(void *argument);
-void print_can_frame(const CAN_Frame_t* f);
 
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -425,7 +424,31 @@ void CmdTask(void *argument)
     	           f.data[0], f.data[1], f.data[2], f.data[3],
     	           f.data[4], f.data[5], f.data[6], f.data[7]);
 
-      motor_cmd_dispatch(&f, BOARD_ID);
+
+    	/* Generic node commands:
+    	 *   0x300 + BOARD_ID
+    	 *
+    	 * NOTE:
+    	 * Currently no generic node dispatcher is connected here.
+    	 * Keep this ID range reserved for future node-level commands.
+    	 */
+    	uint32_t rx_id = f.id; // Keep a local copy of received CAN ID for routing.
+    	// NOTE: Motor commands and generic node commands use separate CAN ID ranges.
+    	if (rx_id == (CMD_BASE_ID + BOARD_ID))
+    	{
+    	    // node_cmd_dispatch(&f, BOARD_ID);
+    	}
+
+    	/* Motor commands:
+    	 *   0x400 + BOARD_ID
+    	 *
+    	 * These are dispatched to motor command parser.
+    	 */
+    	else if (rx_id == (MOTOR_CMD_BASE_ID + BOARD_ID))
+    	{
+
+    	    motor_cmd_dispatch(&f, BOARD_ID);
+    	}
     }
   }
 }
@@ -540,15 +563,6 @@ void DebugTask(void *argument)
 }
 /*----------------------------------------------------------------------------*/
 
- void print_can_frame(const CAN_Frame_t* f)
-{
-  printf("CAN RX: id=0x%lX dlc=%u flags=0x%02X data=",
-         (unsigned long)f->id, f->dlc, f->flags);
 
-  for (int i = 0; i < f->dlc; i++)
-    printf("%02X ", f->data[i]);
-
-  printf("\r\n");
-}
 /* USER CODE END Application */
 
