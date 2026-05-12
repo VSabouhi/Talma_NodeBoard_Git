@@ -402,6 +402,13 @@ void Motor_Process(void)
         if (!g_motor[i].is_moving)
             continue;
 
+        MOTOR_CTRL_LOG("PROC idx=%u moving=%u rem=%ld pos=%ld target=%ld",
+                       i,
+                       g_motor[i].is_moving,
+                       (long)stepper_remaining(i),
+                       (long)g_motor[i].current_pos,
+                       (long)g_motor[i].target_pos);
+
         // اگر low-level می‌گوید step باقی مانده صفر است،
         // حرکت تمام شده و current_pos را برابر target می‌کنیم.
         if (stepper_remaining(i) == 0)

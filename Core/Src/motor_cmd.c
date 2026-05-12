@@ -3,7 +3,8 @@
 #include "stepperMotor.h"
 #include "utils.h"
 #include "can.h"
-
+#include "FreeRTOS.h"
+#include "task.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -248,6 +249,8 @@ static void MotorCmd_SendStatus(uint8_t status_type,
                   data[0], data[1], data[2], data[3],
                   data[4], data[5], data[6], data[7]);
 
+    taskENTER_CRITICAL();
+
     if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) > 0)
     {
         (void)HAL_CAN_AddTxMessage(&hcan1, &txh, data, &mailbox);
@@ -256,6 +259,8 @@ static void MotorCmd_SendStatus(uint8_t status_type,
     {
         MOTOR_CMD_LOG("STATUS tx skipped: no free CAN mailbox");
     }
+
+    taskEXIT_CRITICAL();
 }
 /* ============================================================*/
 static void MotorCmd_SendAck(uint8_t last_cmd, uint8_t result)
@@ -320,14 +325,19 @@ static void MotorCmd_SendPosResponse(uint8_t idx)
                   m->is_moving,
                   m->fault);
 
+	taskENTER_CRITICAL();
+
     if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) > 0)
     {
+
         (void)HAL_CAN_AddTxMessage(&hcan1, &txh, data, &mailbox);
     }
     else
     {
         MOTOR_CMD_LOG("POS_RESPONSE tx skipped: no free CAN mailbox");
     }
+
+    taskEXIT_CRITICAL();
 }
 
 
@@ -387,6 +397,22 @@ void MotorCmd_NotifyMotorDone(uint8_t motor_idx)
 
     g_pending_done_mask &= ~(1u << motor_idx);
 
+    MOTOR_CMD_LOG("DONE_NOTIFY_AFTER_CLEAR idx=%u pending=0x%08lX last_cmd=0x%02X",
+                  motor_idx,
+                  (unsigned long)g_pending_done_mask,
+                  g_last_motion_cmd);
+
+    if (g_pending_done_mask == 0)
+    {
+        uint8_t done_cmd = g_last_motion_cmd;
+
+        // Clear context before sending DONE.
+        // NOTE:
+        // DONE itself still carries the completed command in done_cmd.
+        g_last_motion_cmd = 0;
+
+        MotorCmd_SendDone(done_cmd, MOTOR_RESULT_OK);
+    }
 }
 
 
