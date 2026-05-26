@@ -144,12 +144,24 @@ static void SendAll4Chunks(void)
     // وضعیت سنسور را به قالب 2 بیتی تبدیل می‌کنیم
     st2 = pack_sensor_status_2bit(sens_status[i]);
 
-    // چون فقط 6 بیت برای data داریم، مقدار را محدود می‌کنیم به 0..63
-    // اگر بعداً خواستی بازه 0..100 کامل بماند، باید packing را عوض کنیم
-    if (sensors[i] > 63u)
-        value6 = 63u;
+    // Clamp open/no-contact range.
+    //
+    // NOTE:
+    // Main/UI currently use this semantic:
+    //   50 = no pressure / no contact
+    //    0 = maximum pressure
+    //
+    // Values above 50 are treated as open/no-contact.
+    // Do NOT invert the value here.
+    // Do NOT change Main/UI pressure semantics here.
+    if (sensors[i] > 50u)
+    {
+        value6 = 50u;
+    }
     else
+    {
         value6 = sensors[i];
+    }
 
     // چیدن status و value داخل یک بایت
     sensors_packed[i] = (uint8_t)((st2 << 6) | (value6 & 0x3Fu));
